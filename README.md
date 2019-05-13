@@ -5,4 +5,4 @@
 # Usage
 Create config.yaml (see example file) and then run
     
-    sudo ./netem.py --help
+    sudo ./netem.py
