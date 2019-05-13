@@ -22,12 +22,16 @@ def clear_all(netif):
 
 
 class Interface:
-    def __init__(self, netif, rate):
+    def __init__(self, netif, rate=None):
         self.parent_classid = '1:1'
         self.classids = []
         self.netif = netif
-        self.rate = '%sMbit' % rate
         self._created = False
+
+        if rate is None:
+            self.rate = '1000Mbit'
+        else:
+            self.rate = rate
 
     def _create(self):
         if self._created:
@@ -39,14 +43,17 @@ class Interface:
             ])
         self._created = True
 
-    def _add_netem(self, netem_args, cidrs, cidrtype):
+    def _add_netem(self, netem_args, cidrs, cidrtype, rate=None):
+        if rate is None:
+            rate = self.rate
+
         self._create()
         classid = '1:%s' % str(len(self.classids) + 10)
         self.classids.append(classid)
 
         run_cmd([
             'tc', 'class', 'add', 'dev', self.netif, 'parent', self.parent_classid,
-            'classid', classid, 'htb', 'rate', self.rate
+            'classid', classid, 'htb', 'rate', rate
             ])
         netem_cmd = [
             'tc', 'qdisc', 'add', 'dev', self.netif, 'parent', classid, 'netem'
@@ -62,11 +69,11 @@ class Interface:
 
 
 class OutInterface(Interface):
-    def __init__(self, netif, rate=1000):
+    def __init__(self, netif, rate=None):
         super().__init__(netif, rate)
 
-    def add_netem(self, netem_args, cidrs):
-        self._add_netem(netem_args, cidrs, cidrtype='dst')
+    def add_netem(self, netem_args, cidrs, rate=None):
+        self._add_netem(netem_args, cidrs, 'dst', rate)
 
 
 class InInterface(Interface):
@@ -84,8 +91,8 @@ class InInterface(Interface):
             'match', 'u32', '0', '0', 'action', 'mirred', 'egress', 'redirect', 'dev', ifbif
             ])
 
-    def add_netem(self, netem_args, cidrs):
-        self._add_netem(netem_args, cidrs, cidrtype='src')
+    def add_netem(self, netem_args, cidrs, rate=None):
+        self._add_netem(netem_args, cidrs, 'src', rate)
 
 
 def main():
@@ -128,18 +135,18 @@ def main():
         out_netem.extend(params.get('both', []))
 
         if in_netem:
-            in_if = InInterface(netif)
+            in_if = InInterface(netif, rate=params.get('in_rate'))
             for i in in_netem:
                 LOGGER.info("Adding incoming '%s' for '%s' on interface '%s'", i['netem'],
                              ', '.join(i['cidrs']), netif)
-                in_if.add_netem(i['netem'].split(), i['cidrs'])
+                in_if.add_netem(i['netem'].split(), i['cidrs'], i.get('rate'))
 
         if out_netem:
-            out_if = OutInterface(netif)
+            out_if = OutInterface(netif, rate=params.get('out_rate'))
             for i in out_netem:
                 LOGGER.info("Adding outgoing '%s' for '%s' on interface '%s'", i['netem'],
                              ', '.join(i['cidrs']), netif)
-                out_if.add_netem(i['netem'].split(), i['cidrs'])
+                out_if.add_netem(i['netem'].split(), i['cidrs'], i.get('rate'))
 
 
 if __name__ == '__main__':

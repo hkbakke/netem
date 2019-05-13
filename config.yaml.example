@@ -1,13 +1,18 @@
 ens33:
+  in_rate: 100Mbit
+  out_rate: 102Mbit
   in:
     - netem: delay 100ms 20ms
       cidrs:
         - 8.8.4.4/32
+      rate: 10Mbit
   out:
     - netem: delay 10ms 3ms
       cidrs:
         - 8.8.4.4/32
+      rate: 3Mbit
   both:
     - netem: delay 30ms 10ms
       cidrs:
         - 8.8.8.8/32
+      rate: 5Mbit
