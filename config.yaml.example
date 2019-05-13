@@ -1,0 +1,13 @@
+ens33:
+  in:
+    - netem: delay 100ms 20ms
+      cidrs:
+        - 8.8.4.4/32
+  out:
+    - netem: delay 10ms 3ms
+      cidrs:
+        - 8.8.4.4/32
+  both:
+    - netem: delay 30ms 10ms
+      cidrs:
+        - 8.8.8.8/32

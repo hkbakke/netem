@@ -4,6 +4,8 @@ import logging
 import argparse
 import subprocess
 
+import yaml
+
 
 LOGGER = logging.getLogger()
 
@@ -25,13 +27,17 @@ class Interface:
         self.classids = []
         self.netif = netif
         self.rate = '%sMbit' % rate
+        self._created = False
 
     def _create(self):
-        run_cmd(['tc', 'qdisc', 'add', 'dev', self.netif, 'handle', '1:', 'root', 'htb'])
+        if self._created:
+            return
+        run_cmd(['tc', 'qdisc', 'add', 'dev', self.netif, 'root', 'handle', '1:', 'htb'])
         run_cmd([
             'tc', 'class', 'add', 'dev', self.netif, 'parent', '1:', 'classid',
             self.parent_classid, 'htb', 'rate', self.rate
             ])
+        self._created = True
 
     def _add_netem(self, netem_args, cidrs, cidrtype):
         self._create()
@@ -96,7 +102,9 @@ def main():
         default='info',
         help='Set log level for console output'
     )
-    parser.add_argument('-i', '--interface', metavar='INTERFACE', required=True)
+    parser.add_argument('-c', '--clear', action='store_true', help='Clear config')
+    parser.add_argument('-f', '--config', metavar='FILENAME', default='config.yaml',
+                        help='Path to config file')
     args = parser.parse_args()
 
     # Set up logging
@@ -104,11 +112,34 @@ def main():
     console = logging.StreamHandler()
     LOGGER.addHandler(console)
 
-    clear_all(args.interface)
-    out_if = OutInterface(args.interface)
-    out_if.add_netem(['delay', '30ms', '10ms'], ['192.168.70.2/32'])
-    in_if = InInterface(args.interface)
-    in_if.add_netem(['delay', '30ms', '10ms'], ['192.168.70.2/32'])
+    with open(args.config, 'r') as f:
+        LOGGER.debug('Loading config...')
+        config = yaml.load(f)
+        LOGGER.debug(yaml.dump(config, default_flow_style=False))
+
+    for netif, params in config.items():
+        clear_all(netif)
+        if args.clear:
+            continue
+
+        in_netem = params.get('in', [])
+        out_netem = params.get('out', [])
+        in_netem.extend(params.get('both', []))
+        out_netem.extend(params.get('both', []))
+
+        if in_netem:
+            in_if = InInterface(netif)
+            for i in in_netem:
+                LOGGER.info("Adding incoming '%s' for '%s' on interface '%s'", i['netem'],
+                             ', '.join(i['cidrs']), netif)
+                in_if.add_netem(i['netem'].split(), i['cidrs'])
+
+        if out_netem:
+            out_if = OutInterface(netif)
+            for i in out_netem:
+                LOGGER.info("Adding outgoing '%s' for '%s' on interface '%s'", i['netem'],
+                             ', '.join(i['cidrs']), netif)
+                out_if.add_netem(i['netem'].split(), i['cidrs'])
 
 
 if __name__ == '__main__':
